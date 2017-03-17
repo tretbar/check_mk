@@ -1,21 +1,27 @@
-# check_mk 
-
-Some stuff I wrote for check_mk
+**WARNING**: "overwrite" means, original check_mk files are overwritten or extended. Please doublecheck twice before installing to not mess up your installation.
 
 ## apc_rackpdu_power
   
-This check monitors the amperage of an APC Rack-PDU and is capable of monitoring one- and three-phase PDU.
+(overwrite) Can now monitor three-phase PDUs (was only one-phase).
 
-**WARNING: This check supersedes existing one! You'll need to reinventarize any APC Rack-PDU!**
+**WARNING: This check supersedes existing one by changing service description! You'll need to reinventarize any APC Rack-PDU!**
 
 ## apc_rackpdu_temp
   
-This check monitors the data of temperature sensors of an APC Rack-PDU. If there are any, it should inventorize all sensors on the PDU. Mine only have one sensor.
+Monitors the data of temperature sensors of an APC Rack-PDU.
 
 ## dell_chassis_slots
 
-This check monitors the blade slots of the chassis of Dell PowerEdge/FX2 Servers.  The check returns {OK} when a slot is in the {basic} state. It returns {WARN} otherwise (can be overwritten by a WATO rule).  No limits are set in the check.  In addition to the state, the check displays the following other parameters of the server: drsServerServiceTag, drsServerSlotName
+(overwrite) Can now be controlled by a WATO rule to set any desired state for a given slot state. Useful when using DPM (which would report {WARN} if powered down).
+
+## dell_poweredge_mem
+
+(overwrite) Can now be controlled by a WATO rule to set any desired state for a given DIMM state. Useful when using DPM (which would report {UNKNOWN} if powered down).
+
+## esx_vsphere_hostsystem_dpm
+
+(overwrite) Modifies host CPU, MEM and state information to support DPM (and not reporting errors if powered down).
 
 ## esx_vsphere_vm_annotation
 
- For a virtual machine running on ESX this check just reports the annotation. The check always returns {OK} state. It can be used to aggregate VMs in several views according to their annotations. See "Monitoring VMWare ESX with Check_MK" in the online documentation as well. The check script overwrites orignal "esx_vsphere_vm" in local file hierarchy, but imports and executes original one to be update-save.
+(overwrite) Just reports vSphere annotation for a VM. Modifies special agent, so stick to correct version!
