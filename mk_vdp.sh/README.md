@@ -1,7 +1,8 @@
 ## mk_vdp.sh
 
 
-code(
+```
+
  1. install script in VDP appliance: /usr/lib/check_mk_agent/plugins/600
  2. /etc/sudoers:
     check_mk ALL = (root) NOPASSWD: /usr/local/avamar/bin/mccli
@@ -27,4 +28,5 @@ code(
 
  - example status detail:
          OK - vSphere Data Protection Backup, VM: <name>, Appliance: <name>, last run: 2017-01-05 18:36 CET (status: Completed, transferred 1.4% of 73.5GB)
-)
+
+```
