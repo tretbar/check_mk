@@ -25,3 +25,7 @@ Monitors the data of temperature sensors of an APC Rack-PDU.
 ## esx_vsphere_vm_annotation
 
 (overwrite) Just reports vSphere annotation for a VM. Modifies special agent, so stick to correct version!
+
+## vnx_lun_perf.sh
+
+A Nagios script to report performance of VNX LUNs. Configure in WATO as classical check for the array (not SP), one per LUN. Configure SP IP addresses inside script. Needs naviseccli.
