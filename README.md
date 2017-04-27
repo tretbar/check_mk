@@ -29,3 +29,7 @@ Monitors the data of temperature sensors of an APC Rack-PDU.
 ## vnx_lun_perf.sh
 
 A Nagios script to report performance of VNX LUNs. Configure in WATO as classical check for the array (not SP), one per LUN. Configure SP IP addresses inside script. Needs naviseccli.
+
+## mk_vdp.sh ##
+
+A small script that allows monitoring of VMware Data Protection Jobs. Runs on VDP Appliance.
