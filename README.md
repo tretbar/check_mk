@@ -18,6 +18,10 @@ Monitors the data of temperature sensors of an APC Rack-PDU.
 
 (overwrite) Can now be controlled by a WATO rule to set any desired state for a given DIMM state. Useful when using DPM (which would report {UNKNOWN} if powered down).
 
+## emc_isilon_quota
+
+(overwrite) This checks extends existing one to a WATO rule, so that Quota value can be adjusted (sometimes reported wrong on SNMP)
+
 ## esx_vsphere_hostsystem_dpm
 
 (overwrite) Modifies host CPU, MEM and state information to support DPM (and not reporting errors if powered down).
