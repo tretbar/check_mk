@@ -1,9 +1,11 @@
 #!/bin/bash
+#set -x
 
 # ttr@mh
 # 1.0   2016     - initial
 # 1.1   201703   - suppress WARN when age older 2d (ERR only)
 # 1.2   201704   - now handles mccli error 10020
+# 1.3   201706   - now handles older VDP (5.x)
 #
 # 1. install script in VDP appliance: /usr/lib/check_mk_agent/plugins/600
 # 2. /etc/sudoers:
@@ -38,12 +40,34 @@
 #
 #
 
+# detect version
+MCCLIVERSION=`sudo /usr/local/avamar/bin/mccli --version | sed -n 's/^mccli \(.*\)$/\1/p'`
+#MCCLIVERSION="6.1.82-57"
 
 # get last activity, ignore table headers and uninteresting columns
-MCCLIOUT=`sudo /usr/local/avamar/bin/mccli activity show \
+# adjust output to:
+# STATUS ERRORCODE DURATION ENDDATE ENDTIME ENDTZ SIZE UNIT CHANGEDPERCENTAGE CLIENT REST
+
+case ${MCCLIVERSION} in
+
+  # VDP 6.x
+  7*)
+    MCCLIOUT=`sudo /usr/local/avamar/bin/mccli activity show \
                | sed 's/[ ][ ]*/ /g; s/Completed w/Completed_w/g' \
                | awk '/^[0-9]* / { print $2" "$3" "$7" "$8" "$9" "$10" "$13" "$14" "$15" "$16 }' \
                | sed 's/<0.05%/0/g; s/%//g'`
+  ;;
+
+  # VDP 5: mccli version 6.x
+  *)
+    MCCLIOUT=`sudo /usr/local/avamar/bin/mccli activity show --verbose \
+               | sed 's/[ ][ ]*/ /g; s/Completed w/Completed_w/g' \
+               | awk '/^[0-9]* / { print $2" "$3" "$7" "$8" "$9" "$6" "$13" Bytes "$14" "$15 }' \
+               | sed 's/<0.05%/0/g; s/%//g'`
+
+  ;;
+
+esac
 
 # get list of VMs in activity log
 VMLIST=`echo "${MCCLIOUT}" | awk '{print $10}' | sort -u`
@@ -101,6 +125,14 @@ do
 
     [ -z "${WARN}" ] || EXITCODE=1
     [ -z "${ERR}" ] || EXITCODE=2
+
+    # human readable
+    if [ ${UNIT} == "Bytes" ]
+    then
+      SIZE=`echo $SIZE | sed 's/,//g'`
+      let SIZE=$SIZE/1073741824
+      UNIT=GB
+    fi
 
 
     # check_mk local check piggyback
