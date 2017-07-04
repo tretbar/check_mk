@@ -1,0 +1,1 @@
+This package extends df to accept nfs filesystem, info is delivered by a plugin (check_mk agent only handles nfs mounts, not the filesystem itself). Use the sed within plugin to beautify output to fit your NFS servers (currently optimized for EMC Isilon), since df outputs mountpoint and ommits filesystem.
