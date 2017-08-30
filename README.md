@@ -34,6 +34,10 @@ Monitors the data of temperature sensors of an APC Rack-PDU.
 
 A Nagios script to report performance of VNX LUNs. Configure in WATO as classical check for the array (not SP), one per LUN. Configure SP IP addresses inside script. Needs naviseccli.
 
+## cmk_replication.sh
+
+Script runs on vMA and checks vSphere Replication status. Runs against an ESXi with access to all datastores, honors RPO and stopped replications.
+
 ## mk_vdp.sh ##
 
 A small script that allows monitoring of VMware Data Protection Jobs. Runs on VDP Appliance.
