@@ -52,7 +52,7 @@
 #    /ifs/home/check_mk/plugins
 #
 # - if you want to query agent by SSH-Login:
-     - additional dirs:
+#    - additional dirs:
 #    /ifs/home/check_mk/.ssh
 #    /ifs/home/check_mk/bin
 #    - deploy SSH public key for login and put this agent into ~/bin/check_mk_agent
