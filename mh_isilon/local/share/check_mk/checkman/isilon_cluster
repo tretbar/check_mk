@@ -1,0 +1,17 @@
+title: EMC Isilon Cluster information
+agents: isilon
+license: GPL
+distribution: check_mk
+description:
+ This check monitors EMC Isilon Cluster status. Status will be {OK} if Isilon status is
+ "OK" and {WARN} in any other case. Performance data is provide for  used, available
+ and total disk size. 
+
+ A perfometer is provided, that shows used capacity.
+
+
+inventory:
+ One service per Isilon cluster is created.
+
+item:
+ Isilon cluster <cluster name>

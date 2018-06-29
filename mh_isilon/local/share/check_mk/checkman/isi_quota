@@ -1,0 +1,19 @@
+title: Detailed usage of RAM, Swap, VMalloc and other memory areas on Linux
+agents: linux
+catalog: os/kernel
+license: GPL
+distribution: check_mk
+description:
+ This check verifies all hard and soft quotas of an EMC Isilon cluster and
+ checks each used capacity for exceeding warning and critical thresholds. 
+ These thresholds can be configured from a WATO rule for each Isilon cluster
+ (not each quota). The status of the service ist {OK} if all quotas are OK
+ or is worst of {WARN} or {CRIT} resp. Exceeding quotas are listed as
+ multiline output in service view (click on service).
+
+item:
+ Isilon Quota
+
+inventory:
+ One item per Isilon cluster is being created.
+

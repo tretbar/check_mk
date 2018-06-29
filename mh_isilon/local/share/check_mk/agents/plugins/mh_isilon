@@ -1,0 +1,139 @@
+#
+# run this plugin cached!
+# every 1800sec should be sufficant
+#
+
+#
+# read all quotas
+#
+
+QUOTA=$(isi quota quotas list | egrep -v '(^-|^Total:|^Type)')
+if [ ! x"$QUOTA" == x ]
+then
+  echo "<<<isi_quota>>>"
+  echo "$QUOTA"
+fi
+
+
+#
+# read all synciqs
+#
+SEP="<<<synciq>>>"
+isi sync policies list | egrep 'sync|Yes' | while read NAME REST
+do
+  [ -z $SEP ] || { echo $SEP; unset SEP; }
+  echo -n $NAME" sync Yes "
+  VIEW=$(isi sync policies view $NAME)
+
+  date -j -f %Y-%m-%dT%H:%M:%S $(echo "$VIEW" | sed -n 's/^.*Last Success://p') '+%s' | xargs echo -n
+
+
+  #
+  # WTF: schedule is configured prosaically!
+  #
+  # adjust MAXAGE if it does not fit your needs
+  #
+  SCHEDULE=$(echo "$VIEW" | sed -n 's/^.*Schedule: //p')
+  NUMBER=$(echo $SCHEDULE | cut -d ' ' -f 2)
+
+  case $SCHEDULE in
+    "Manually"*)   MAXAGE=99999999                ;;
+    *day*)         MAXAGE=$(($NUMBER * 86400))    ;;
+    *week*)        MAXAGE=$(($NUMBER * 604800))   ;;
+    *month*)       MAXAGE=$(($NUMBER * 2678400))  ;;
+    *year*)        MAXAGE=$(($NUMBER * 31622400)) ;;
+    *)             MAXAGE=0                       ;;
+  esac
+
+  echo -n " "$MAXAGE" "
+
+  echo "$VIEW" | sed -n 's/^.*Description://p' | xargs echo
+done
+unset SEP
+
+#
+# cluster and node status
+#
+function list_isi_cluster()
+{
+  SEP="<<<isilon_cluster>>>"
+  echo $SEP && unset SEP
+  echo "$OUT" | tr "[]()/" "     " | \
+  awk -F'[ |][ ]*' 'BEGIN { bps_in=0; bps_out=0; hhd_used=0; hdd_size=0; hdd_avail=0 }
+                    /Cluster Name/ { name=$3};
+                    /Cluster Health/ { health=$3};
+                    /Cluster Totals/ { bps_in=$4; bps_out=$5; hhd_used=$7; hdd_size=$8 }
+                    /Avail/ { hdd_avail=$2 }
+                    END { print name" "bps_in" "bps_out" "hhd_used" "hdd_size" "hdd_avail" "health}'
+
+  SEP="<<<isilon_node>>>"
+  # #<id> <in_bps> <out_bps> <hdd_used> <hdd_total> <IP> <failed_disks> <PSU temp> <temp> <status>
+  echo $SEP && unset SEP
+  echo "$OUT" \
+  | awk -F'[|/(]' '/^ *[0-9]*\|/ { print $1" "$4" "$5" "$7" "$8" "$2" "$3}' \
+  | while read ID IN_BPS OUT_BPS HDD_USED HDD_TOTAL IP STATUS
+  do
+    FAILED_DISK=$(isi statistics query current -n $ID -a -z --keys node.disk.unhealthy.count | awk '{print $2}')
+    PSU_TEMP=$(isi statistics query current -n $ID -a -z --keys node.sensor.temp.celsius.10,node.sensor.temp.celsius.11 | awk '{if($2 > $3) printf "%d", $2; else printf "%d", $3}')
+    TEMP=$(isi statistics query current -n $ID -a -z --keys node.sensor.temp.celsius.9,node.sensor.temp.celsius.13 | awk '{if($2 > $3) printf "%d", $2; else printf "%d", $3}')
+    echo $ID" "$IN_BPS" "$OUT_BPS" "$HDD_USED" "$HDD_TOTAL" "$IP" "$FAILED_DISK" "$PSU_TEMP" "$TEMP" "$STATUS
+  done
+
+}
+
+#OUT=$(isi status -v)
+#case $OUT in
+#  *Cluster*) list_isi_cluster ;;
+#esac
+
+
+
+#
+# isi suddenly fails, so try 3 times before giving up
+#
+TMPFILE=/ifs/home/check_mk/var/mh_isilon.out
+for ((i=1; i<=3; i++))
+do
+
+  OUT=$(isi status -v)
+
+  if [ "x$OUT" == x ]
+  then
+     #
+     # sleep up to 9sec
+     #
+     sleep $(echo ${RANDOM: -1})
+
+  else
+     #
+     # output
+     #
+     CMKOUT=$(list_isi_cluster)
+
+     #
+     # isi output is suddenly rubbish, so we fake news:
+     if echo "${CMKOUT}" | grep -q "n n n$"
+     then
+       cat ${TMPFILE}
+     else
+       echo "${CMKOUT}"
+
+       #
+       # Spare in der Zeit, dann hast Du in der Not.
+       #
+       echo "$CMKOUT" >${TMPFILE}
+
+     fi
+
+     exit 0
+  fi
+done
+
+#
+# getting here means we did not get isi statistics
+# just return old data (i hope no one notices) or die quietly
+#
+if [ -e ${TMPFILE} 2>/dev/null ]
+then
+  cat ${TMPFILE}
+fi

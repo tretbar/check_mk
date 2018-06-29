@@ -1,5 +1,5 @@
 #!/bin/bash
-# Check_MK Agent for FreeBSD
+# Check_MK Agent for EMC Isilon
 # +------------------------------------------------------------------+
 # |             ____ _               _        __  __ _  __           |
 # |            / ___| |__   ___  ___| | __   |  \/  | |/ /           |
@@ -37,13 +37,16 @@
 #
 # EMC Isilon adaptions:
 #
-# This is modified FreeBSD agent to run from ifs filesystem (which 
+# This is modified FreeBSD agent to run from ifs filesystem (which
 # is mounted "noexec") with access restricted to the homedir of a
 # special user.
+#
+# How to:
 #
 # - Prepare an Isilon user, e.g. "check_mk" in "LOCAL:System" provider
 # - Homedir "/ifs/home/check_mk"
 # - assign role "AuditAdmin"
+# - sudoers: check_mk ALL=(ALL) NOPASSWD:/usr/bin/isi_for_array *
 #
 # - prepare directory structure:
 #    /ifs/home/check_mk/etc
@@ -55,14 +58,22 @@
 #    - additional dirs:
 #    /ifs/home/check_mk/.ssh
 #    /ifs/home/check_mk/bin
-#    - deploy SSH public key for login and put this agent into ~/bin/check_mk_agent
+#    - deploy SSH public key for login and put agent into ~/bin/check_mk_agent
 #    - WATO rule "datasource_programs"
 #      ("Individual program call instead of agent access"):
 #      /usr/bin/ssh -o "StrictHostKeyChecking no" check_mk@<IP> "/usr/local/bin/bash /ifs/home/check_mk/bin/check_mk_agent"
 #
-# - deploy plugins
+# - Configure only one host object: the Isilon cluster address. Nodes are
+#   automagically integrated.
 #
-# - \m/ >_< \m/
+# - You do not want to query agent more often than every 5 minutes, isi says.
+#
+# - You want to deploy plugins, Tom says.
+#   - plugins/1800/mh_isilon
+#   - plugins/300/isilon_pstat_nfs (not only for NFS)
+#
+#
+#                        \m/ >_< \m/
 #
 #  EMC Isilon adaptions: Tom Tretbar <thomas.tretbar@managedhosting.de>
 
@@ -148,73 +159,72 @@ osver="$(uname -r)"
 is_jailed="$(sysctl -n security.jail.jailed)"
 
 
-# Partitionen (-P verhindert Zeilenumbruch bei langen Mountpunkten)
-# Achtung: NFS-Mounts werden grundsaetzlich ausgeblendet, um
-# Haenger zu vermeiden. Diese sollten ohnehin besser auf dem
-# Server, als auf dem Client ueberwacht werden.
-
 echo '<<<df>>>'
-# no special zfs handling so far, the ZFS.pools plugin has been tested to
-# work on FreeBSD
-if df -T > /dev/null ; then
-    df -kTP -t ufs | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail|uzip)'
-else
-    df -kP -t ufs | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail|uzip)' | awk '{ print $1,"ufs",$2,$3,$4,$5,$6 }'
+( sudo /usr/bin/isi_for_array -s df -kTP -t ufs ) \
+  | egrep -v '(Filesystem|devfs|procfs|fdescfs|basejail|uzip|ufp|ipmi)' \
+  | sed 's/^.*-\([0-9]*\)\:\(.*\)$/Node-\1\2/g' \
+  | awk '{ print $2" "$3" "$4" "$5" "$6" "$7" "$1":"$8 }'
+
+
+# Produce compatible load/cpu output to linux agent. Not so easy here. Especially on Isilon
+echo '<<<isi_cpu>>>'
+if [ ! -e /ifs/home/check_mk/bin/isi_cpu ]
+then
+  cat >/ifs/home/check_mk/bin/isi_cpu <<- EOF
+sysctl -n vm.loadavg | tr -d '{}' | xargs echo -n
+echo -n " "
+top -b -n 1 | sed -n 's/^\([0-9]*\) processes: \([0-9]*\) .*$/\2\/\1/p' | xargs echo -n
+echo -n " "
+sysctl -n kern.lastpid | xargs echo -n
+echo -n " "
+sysctl -n hw.ncpu
+EOF
 fi
 
-# Check mount options.
-# FreeBSD doesn't do remount-ro on errors, but the users might consider
-# security related mount options more important.
-echo '<<<mounts>>>'
-mount -p -t ufs
+( sudo /usr/bin/isi_for_array -s /usr/local/bin/bash /ifs/home/check_mk/bin/isi_cpu ) | sed 's/^.*-\([0-9]*\)\:\(.*\)$/Node-\1\2/g'
 
-# processes including username, without kernel processes
-echo '<<<ps>>>'
-COLUMNS=10000
-if [ "$is_jailed" = "0" ]; then
-    ps ax -o state,user,vsz,rss,pcpu,command | sed -e 1d  -e '/\([^ ]*J\) */d' -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\2,\3,\4,\5) /'
-else
-    ps ax -o user,vsz,rss,pcpu,command | sed -e 1d -e 's/ *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) *\([^ ]*\) */(\1,\2,\3,\4) /'
-fi
-
-
-# Produce compatible load/cpu output to linux agent. Not so easy here.
-echo '<<<cpu>>>'
-echo `sysctl -n vm.loadavg | tr -d '{}'` `top -b -n 1 | grep -E '^[0-9]+ processes' | awk '{print $3"/"$1}'` `sysctl -n kern.lastpid` `sysctl -n hw.ncpu`
 
 # Calculate the uptime in seconds since epoch compatible to /proc/uptime in linux
-echo '<<<uptime>>>'
-up_seconds=$(( `date +%s` - `sysctl -n kern.boottime  | cut -f1 -d\, | awk '{print $4}'`))
-idle_seconds=$(ps axw | grep idle | grep -v grep | awk '{print $4}' | cut -f1 -d\: )
+echo '<<<isi_uptime>>>'
+if [ ! -e /ifs/home/check_mk/bin/isi_uptime ]
+then
+  cat >/ifs/home/check_mk/bin/isi_uptime <<- "EOF"
+up_seconds=$(($(date +%s)-$(sysctl -n kern.boottime  | sed -n 's/^.* \([0-9]*\),.*$/\1/p')))
+idle_seconds=$(ps axw | sed -n '/\[idle\]/ { s/^.*[^0-9]\([0-9]*\)\:.*/\1/p;}')
 echo "$up_seconds $idle_seconds"
+EOF
+fi
 
+( sudo /usr/bin/isi_for_array -s /usr/local/bin/bash /ifs/home/check_mk/bin/isi_uptime ) | sed 's/^.*-\([0-9]*\)\:\(.*\)$/Node-\1\2/g'
 
+# memory. thx to https://raw.githubusercontent.com/ocochard/myscripts/master/FreeBSD/freebsd-memory.sh for pointing this out
+echo '<<<isi_mem>>>'
+if [ ! -e /ifs/home/check_mk/bin/isi_mem ]
+then
+  cat >/ifs/home/check_mk/bin/isi_uptime <<- "EOF"
+mem_total=$(sysctl -n hw.physmem)
+sysctl_pagesize=$(sysctl -n hw.pagesize)
+mem_inactive=$(($(sysctl -n vm.stats.vm.v_inactive_count) * $sysctl_pagesize))
+mem_cache=$(($(sysctl -n vm.stats.vm.v_cache_count) * $sysctl_pagesize))
+mem_free=$(($(sysctl -n vm.stats.vm.v_free_count) * $sysctl_pagesize))
+mem_avail=$(($mem_inactive + $mem_cache + $mem_free))
+echo $mem_total $mem_avail
+EOF
+fi
 
-# Soft-RAID
-echo '<<<freebsd_geom_mirrors>>>'
-gmirror status | grep -v ^Name
+( sudo /usr/bin/isi_for_array -s /usr/local/bin/bash /ifs/home/check_mk/bin/isi_mem ) | sed 's/^.*-\([0-9]*\)\:\(.*\)$/Node-\1\2/g'
+
 
 # Performancecounter Kernel
-echo "<<<kernel>>>"
-date +%s
-forks=`sysctl -n vm.stats.vm.v_forks`
-vforks=`sysctl -n vm.stats.vm.v_vforks`
-rforks=`sysctl -n vm.stats.vm.v_rforks`
-kthreads=`sysctl -n vm.stats.vm.v_kthreads`
-echo "cpu" `sysctl -n kern.cp_time | awk ' { print $1" "$2" "$3" "$5" "$4 } '`
-echo "ctxt" `sysctl -n vm.stats.sys.v_swtch`
-echo "processes" `expr $forks + $vforks + $rforks + $kthreads`
-
-# Network device statistics (Packets, Collisions, etc)
-# only the "Link/Num" interface has all counters.
-echo '<<<netctr>>>'
-date +%s
-if [ "$(echo $osver | cut -f1 -d\. )" -gt "8" ]; then
-    netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{print $1" "$8" "$5" "$6" "$7" 0 0 0 0 "$11" "$9" "$10" 0 0 0 0 0"}'
-else
-    # pad output for freebsd 7 and before
-    netstat -inb | egrep -v '(^Name|lo|plip)' | grep Link | awk '{print $1" "$7" "$5" "$6" 0 0 0 0 0 "$10" "$8" "$9" 0 0 "$11" 0 0"}'
-fi
+#echo "<<<kernel>>>"
+#date +%s
+#forks=`sysctl -n vm.stats.vm.v_forks`
+#vforks=`sysctl -n vm.stats.vm.v_vforks`
+#rforks=`sysctl -n vm.stats.vm.v_rforks`
+#kthreads=`sysctl -n vm.stats.vm.v_kthreads`
+#echo "cpu" `sysctl -n kern.cp_time | awk ' { print $1" "$2" "$3" "$5" "$4 } '`
+#echo "ctxt" `sysctl -n vm.stats.sys.v_swtch`
+#echo "processes" `expr $forks + $vforks + $rforks + $kthreads`
 
 
 if which ntpq > /dev/null 2>&1 ; then
@@ -224,33 +234,17 @@ if which ntpq > /dev/null 2>&1 ; then
 fi
 
 
-# Number of TCP connections in the various states
-echo '<<<tcp_conn_stats>>>'
-netstat -na | awk ' /^tcp/ { c[$6]++; } END { for (x in c) { print x, c[x]; } }'
-
-
-# Fileinfo-Check: put patterns for files into /etc/check_mk/fileinfo.cfg
-if [ -r "$MK_CONFDIR/fileinfo.cfg" ] ; then
-    echo '<<<fileinfo:sep(124)>>>'
-    date +%s
-    for line in $(cat "$MK_CONFDIR/fileinfo.cfg")
-    do
-        stat -f "%N|%z|%m" $line 2>/dev/null
-
-        if [ $? -ne 0 ]; then
-            echo "$line|missing|$(date +%s)"
-        fi
-    done
-fi
-
-
 # Local checks
-# ttr@mh: modified to not directly start script
 echo '<<<local>>>'
 if cd $LOCALDIR ; then
     for skript in $(ls) ; do
         if [ -f "$skript" -a -x "$skript" ] ; then
-            /usr/local/bin/bash ./$skript
+
+            INTERPRETER=$(sed -n '1s/^#!\(.*\)$/\1/p' $skript)
+            [ -z ${INTERPRETER} ] && INTERPRETER=/usr/local/bin/bash
+            ${INTERPRETER} ${skript}
+
+            #/usr/local/bin/bash ./$skript
         fi
     done
     # Call some plugins only every X'th minute
@@ -262,11 +256,15 @@ if cd $LOCALDIR ; then
 fi
 
 # Plugins
-# ttr@mh: modified to not directly start script
 if cd $PLUGINSDIR; then
     for skript in $(ls) ; do
         if [ -f "$skript" -a -x "$skript" ] ; then
-            /usr/local/bin/bash ./$skript
+
+            INTERPRETER=$(sed -n '1s/^#!\(.*\)$/\1/p' $skript)
+            [ -z ${INTERPRETER} ] && INTERPRETER=/usr/local/bin/bash
+            ${INTERPRETER} ${skript}
+
+            #/usr/local/bin/bash ./$skript
         fi
     done
     # Call some plugins only every X'th minute
@@ -279,31 +277,4 @@ fi
 
 
 exit
-
-# isilon synciq
-SEP="<<<synciq>>>"
-#
-# read all synciqs
-#
-isi sync policies list | egrep 'sync|Yes' | while read NAME REST
-do
-  [ -z $SEP ] || { echo $SEP; unset SEP; }
-  echo -n $NAME" sync Yes "
-  VIEW=$(isi sync policies view $NAME)
-
-  date -j -f %Y-%m-%dT%H:%M:%S $(echo "$VIEW" | sed -n 's/^.*Last Success://p') '+%s' | xargs echo -n
-
-  SCHEDULE=$(echo "$VIEW" | sed -n 's/^.*Schedule: //p')
-
-  case $SCHEDULE in
-    "every 1 days"*) MAXAGE=86400 ;;
-    "Manually"*) MAXAGE=99999999 ;;
-    *) MAXAGE=0
-  esac
-
-  echo -n " "$MAXAGE" "
-
-  echo "$VIEW" | sed -n 's/^.*Description://p' | xargs echo
-done
-unset SEP
 

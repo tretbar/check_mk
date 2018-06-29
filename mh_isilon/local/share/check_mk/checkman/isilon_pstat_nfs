@@ -1,0 +1,17 @@
+title: EMC Isilon NFS- and system-statistics information
+agents: isilon
+license: GPL
+distribution: check_mk
+description:
+ This check monitors EMC Isilon cluster statistics. Status will be {WARN} if
+ network packet errors occur. The checks monitors NFSv3 iops, OneFS bandwidth
+ read/write, network bandwidth, packets and errors for in- and outbound traffic, 
+ disk iops and disk bandwidth read/write.
+
+ A perfometer is provided, that shows NFS iops.
+
+inventory:
+ One service per Isilon cluster is created.
+
+item:
+ Isilon Statistics <Isilon Clustername>
